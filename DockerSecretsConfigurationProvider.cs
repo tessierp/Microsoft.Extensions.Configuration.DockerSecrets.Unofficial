@@ -1,17 +1,18 @@
+
+
 namespace Microsoft.Extensions.Configuration.DockerSecrets
 {
+    using FileProviders;
     using System;
     using System.Collections.Generic;
     using System.IO;
-    using Microsoft.Extensions.Configuration;
-    using Microsoft.Extensions.FileProviders;
 
     /// <summary>
     /// An docker secrets based <see cref="ConfigurationProvider"/>.
     /// </summary>
     public class DockerSecretsConfigurationProvider : ConfigurationProvider
     {
-        DockerSecretsConfigurationSource Source { get; set; }
+        private readonly DockerSecretsConfigurationSource _source;
 
         /// <summary>
         /// Initializes a new instance.
@@ -19,12 +20,7 @@ namespace Microsoft.Extensions.Configuration.DockerSecrets
         /// <param name="source">The settings.</param>
         public DockerSecretsConfigurationProvider(DockerSecretsConfigurationSource source)
         {
-            Source = source ?? throw new ArgumentNullException(nameof(source));
-        }
-
-        private static string NormalizeKey(string key)
-        {
-            return key.Replace("__", ConfigurationPath.KeyDelimiter);
+            _source = source ?? throw new ArgumentNullException(nameof(source));
         }
 
         /// <summary>
@@ -34,28 +30,41 @@ namespace Microsoft.Extensions.Configuration.DockerSecrets
         {
             Data = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-            if (Source.FileProvider == null)
+            if (_source.FileProvider == null)
             {
-                if (Directory.Exists(Source.SecretsDirectory))
+                // A docker secrets folder file provider was not supplied, so lets get one
+                if (Directory.Exists(_source.SecretsDirectory))
                 {
-                    Source.FileProvider = new PhysicalFileProvider(Source.SecretsDirectory);
+                    _source.FileProvider = new PhysicalFileProvider(_source.SecretsDirectory);
+                    return;
                 }
-                else if (Source.Optional)
+
+                // We were not able to get a docker secrets folder file provider, if optional just return
+                if (_source.Optional)
                 {
                     return;
                 }
-                else
-                {
-                    throw new DirectoryNotFoundException("DockerSecrets directory doesn't exist and is not optional.");
-                }
+
+                // No docker secrets folder file provider, return an exception
+                throw new DirectoryNotFoundException("DockerSecrets directory doesn't exist and is not optional.");
             }
 
-            var secretsDir = Source.FileProvider.GetDirectoryContents("/");
-            if (!secretsDir.Exists && !Source.Optional)
+            var secretsDir = _source.FileProvider.GetDirectoryContents("/");
+
+            // So we have nothing in the docker secrets folder and it is optional.
+            // We have nothing else to do
+            if (!secretsDir.Exists && _source.Optional)
+            {
+                return;
+            }
+
+            // Check if there is content in the docker secrets folder, if nothing is in there, we have a problem if it isn't optional
+            if (!secretsDir.Exists && !_source.Optional)
             {
                 throw new DirectoryNotFoundException("DockerSecrets directory doesn't exist and is not optional.");
             }
 
+            // Process the docker folder's secrets
             foreach (var file in secretsDir)
             {
                 if (file.IsDirectory)
@@ -66,12 +75,28 @@ namespace Microsoft.Extensions.Configuration.DockerSecrets
                 using (var stream = file.CreateReadStream())
                 using (var streamReader = new StreamReader(stream))
                 {
-                    if (Source.IgnoreCondition == null || !Source.IgnoreCondition(file.Name))
+                    if (_source.IgnoreCondition == null || !_source.IgnoreCondition(file.Name))
                     {
                         Data.Add(NormalizeKey(file.Name), streamReader.ReadToEnd());
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// Normalizes the key. Basically all this does is, takes the docker secrets key and changes it so that it is
+        /// understandable to the asp.net core / net core app using Microsoft's json configuration
+        /// </summary>
+        /// <param name="key">The key.</param>
+        /// <returns>Normalized key.</returns>
+        private string NormalizeKey(string key)
+        {
+            if (key.Contains(_source.DockerSecretsWordSeparator))
+            {
+                return key.Replace(_source.DockerSecretsWordSeparator, ConfigurationPath.KeyDelimiter);
+            }
+
+            return key;
         }
     }
 }

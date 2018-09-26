@@ -1,7 +1,8 @@
+
 namespace Microsoft.Extensions.Configuration.DockerSecrets
 {
+    using FileProviders;
     using System;
-    using Microsoft.Extensions.FileProviders;
 
     /// <summary>
     /// An <see cref="ConfigurationProvider"/> for docker secrets.
@@ -20,6 +21,14 @@ namespace Microsoft.Extensions.Configuration.DockerSecrets
         /// The secrets directory which will be used if FileProvider is not set.
         /// </summary>
         public string SecretsDirectory { get; set; } = "/run/secrets";
+
+        /// <summary>
+        /// Gets or sets the docker secrets word separator.
+        /// </summary>
+        /// <value>
+        /// The docker secrets word separator.
+        /// </value>
+        public string DockerSecretsWordSeparator { get; set; } = "__";
 
         /// <summary>
         /// The FileProvider representing the secrets directory.
